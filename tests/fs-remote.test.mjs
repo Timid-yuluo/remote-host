@@ -1,10 +1,11 @@
+import { importPlugin } from './_paths.mjs';
 /**
  * 远程 fs 后端测试：优先对真实主机跑（用已保存的连接），没有可用连接时自动跳过。
  * 只读写 /tmp 下的临时文件，结束时清理。
  */
-import { ConnectionStore } from '../lib/store.js';
-import { SshPool } from '../lib/ssh.js';
-import { RemoteFileSystem, normalizeRemotePath, containsPath } from '../lib/fs-remote.js';
+const { ConnectionStore } = await importPlugin('lib/store.js');
+const { SshPool } = await importPlugin('lib/ssh.js');
+const { RemoteFileSystem, normalizeRemotePath, containsPath } = await importPlugin('lib/fs-remote.js');
 
 delete process.env.DSH_PROFILE_DIR; // 使用真实存储目录 ~/.dsh/remote-host-store
 const storeDir = `${process.env.HOME}/.dsh/remote-host-store`;

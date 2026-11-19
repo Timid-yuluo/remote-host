@@ -1,3 +1,4 @@
+import { importPlugin } from './_paths.mjs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import path from 'node:path';
 const profileDir = await mkdtemp(path.join(tmpdir(), 'rh-rpc-'));
 process.env.DSH_PROFILE_DIR = profileDir;
 
-const { apply } = await import('../entry.js');
+const { apply } = await importPlugin('entry.js');
 
 const registered = { routes: [], tools: [] };
 const ctx = {

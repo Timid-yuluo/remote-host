@@ -1,7 +1,8 @@
+import { importPlugin } from './_paths.mjs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ConnectionStore } from '../lib/store.js';
+const { ConnectionStore } = await importPlugin('lib/store.js');
 
 const dir = await mkdtemp(path.join(tmpdir(), 'rh-store-fix-'));
 try {

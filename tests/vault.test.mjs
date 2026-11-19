@@ -1,3 +1,4 @@
+import { importPlugin } from './_paths.mjs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import path from 'node:path';
 const profileDir = await mkdtemp(path.join(tmpdir(), 'rh-vault-'));
 process.env.DSH_PROFILE_DIR = profileDir;
 
-const { ConnectionStore } = await import('../lib/store.js');
+const { ConnectionStore } = await importPlugin('lib/store.js');
 const dir = path.join(profileDir, 'remote-host-store');
 
 // 1. plain store: secrets encrypted with the file key

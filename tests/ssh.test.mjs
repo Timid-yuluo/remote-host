@@ -1,5 +1,6 @@
+import { importPlugin } from './_paths.mjs';
 import net from 'node:net';
-import { SshPool } from '../lib/ssh.js';
+const { SshPool } = await importPlugin('lib/ssh.js');
 
 /** Probe whether a local sshd is listening. */
 function probe(port) {
@@ -24,12 +25,12 @@ await pool.disposeAll();
 console.log('SSH POOL LIFECYCLE PASS');
 
 // connectOptions: password profile
-const options = (await import('../lib/ssh.js')).connectOptions({
+const options = (await importPlugin('lib/ssh.js')).connectOptions({
   host: 'h', port: 2222, username: 'u', authType: 'password', password: 'pw'
 });
 if (options.password !== 'pw' || options.port !== 2222) throw new Error('connectOptions mismatch');
 try {
-  (await import('../lib/ssh.js')).connectOptions({ host: 'h', username: 'u', authType: 'key' });
+  (await importPlugin('lib/ssh.js')).connectOptions({ host: 'h', username: 'u', authType: 'key' });
   throw new Error('missing key should throw');
 } catch (e) {
   if (!String(e.message).includes('私钥')) throw e;

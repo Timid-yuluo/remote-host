@@ -2,10 +2,11 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { importPlugin } from './_paths.mjs';
 
 async function boot(config) {
   process.env.DSH_PROFILE_DIR = await mkdtemp(path.join(tmpdir(), 'rh-wire-'));
-  const mod = await import(new URL('../app.js', import.meta.url).href + `?v=${Math.random()}`);
+  const mod = await importPlugin('app.js');
   const provided = [];
   const ctx = {
     get connection() { return { requestRejection: () => undefined }; },

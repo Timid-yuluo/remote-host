@@ -1,3 +1,4 @@
+import { PLUGIN_DIR } from './_paths.mjs';
 /**
  * Static consistency gate for the Remote Host plugin.
  *
@@ -15,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const pluginDir = path.join(here, '..');
+const pluginDir = PLUGIN_DIR;
 const node = process.execPath;
 
 const failures = [];

@@ -1,10 +1,11 @@
+import { importPlugin } from './_paths.mjs';
 
 import { constants, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, renameSync, mkdirSync as mkd, rmdirSync, unlinkSync, existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ssh2 from 'ssh2'; const { Server } = ssh2; const { OPEN_MODE, STATUS_CODE } = await import('ssh2/lib/protocol/SFTP.js');
-import { createRequire } from 'node:module'; const require2 = createRequire(import.meta.url); const { SshPool } = await import('../lib/ssh.js');
+import { createRequire } from 'node:module'; const require2 = createRequire(import.meta.url); const { SshPool } = await importPlugin('lib/ssh.js');
 
 const root = await mkdtemp(path.join(tmpdir(), 'rh-ssh-root-'));
 mkdirSync(path.join(root, 'sub'));

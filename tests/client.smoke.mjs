@@ -1,3 +1,4 @@
+import { pluginPath } from './_paths.mjs';
 /**
  * Client-side smoke test: loads the plugin's browser half through a stub of the
  * DSH module system, stubs React with a minimal hook engine, registers the slots
@@ -10,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const clientPath = path.join(here, '..', 'client.js');
+const clientPath = pluginPath('client.js');
 
 /* ------------------------------------------------------------------ */
 /* Minimal React                                                       */
@@ -141,7 +142,7 @@ requireStub.async = async (spec) => {
   const fileName = spec.slice(2);
   const id = `@local/remote-host/${fileName}`;
   if (!registeredModules.has(id)) {
-    const chunkPath = path.join(here, '..', fileName);
+    const chunkPath = pluginPath(fileName);
     await import(`file://${chunkPath}`);
   }
   const definition = registeredModules.get(id);
