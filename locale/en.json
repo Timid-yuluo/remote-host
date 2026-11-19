@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Remote Host",
+    "description": "Connect over SSH to browse and edit remote files, run commands, forward ports, and keep connections with encrypted credentials, jump hosts and an optional passphrase vault."
+  }
+}

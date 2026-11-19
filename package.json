@@ -1,0 +1,53 @@
+{
+  "name": "@local/remote-host",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SSH remote host file manager: saved connections with encrypted credentials, remote browse/read/edit from the Web panel and agent tools",
+  "type": "module",
+  "exports": {
+    ".": "./entry.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "entry.js",
+    "app.js",
+    "client.js",
+    "client.parts.js",
+    "lib/store.js",
+    "lib/ssh.js",
+    "lib/bindings.js",
+    "lib/audit.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dependencies": {
+    "ssh2": "^1.17.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "icon": "icon.svg",
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.1-0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Timid-yuluo/remote-host.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Timid-yuluo/remote-host/issues"
+  },
+  "homepage": "https://github.com/Timid-yuluo/remote-host#readme"
+}

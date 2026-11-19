@@ -1,0 +1,28 @@
+# 依赖与构建产物
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# 插件运行时数据（绝不应进入版本库）
+remote-host-store/
+connections.json
+bindings.json
+audit.jsonl
+vault.json
+.secret.key
+*.bak
+*.bak.*
+
+# 本地环境与编辑器
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.swp
+
+# 打包产物
+dist/
+*.tgz
+*.tar.gz
+*.zip
