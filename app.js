@@ -5,6 +5,7 @@ import path from 'node:path';
 import { ConnectionStore } from './lib/store.js';
 import { BindingStore, normalizePath } from './lib/bindings.js';
 import { AuditLog } from './lib/audit.js';
+import { RemoteFileSystem } from './lib/fs-remote.js';
 import { SshPool } from './lib/ssh.js';
 
 const DEFAULT_MAX_READ_BYTES = 2 * 1024 * 1024;
@@ -25,7 +26,7 @@ function fail(code, message) {
  * 供 Web 面板使用的已认证 `/remote-host-api` RPC 通道，
  * 以及一个把同样能力暴露给 agent 的工具。
  */
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
   const store = new ConnectionStore(storeDirectory());
   const pool = new SshPool({
     onHostKey: (id, fingerprint) => {
@@ -34,6 +35,31 @@ export function apply(ctx) {
   });
   const bindings = new BindingStore(storeDirectory());
   const audit = new AuditLog(storeDirectory());
+
+  /**
+   * 远程执行世界：开启后 ctx.fs 指向远程主机，bash/read/write/edit 与
+   * workingDirectory 的路径校验全部落在远程，会话工作目录可以是真实远程路径。
+   * 前提：profile 里必须禁用 @deepseek-ai/dsh-fs-local，否则同名服务注册冲突。
+   */
+  const remoteFsConfig = config?.remoteFs ?? {};
+  const remoteFsEnabled = remoteFsConfig.enabled === true;
+  const remoteFsProvider = remoteFsEnabled
+    ? new RemoteFileSystem({
+      pool,
+      getProfile: async () => {
+        const configured = remoteFsConfig.connection;
+        if (configured !== undefined && configured !== '') return resolveProfile(configured);
+        const fallback = await bindings.getDefault();
+        if (fallback === null) throw new Error('远程文件系统未指定连接，且没有默认工作区');
+        return resolveProfile(fallback.connectionId);
+      }
+    })
+    : null;
+
+  if (remoteFsProvider !== null && typeof ctx.provide === 'function') {
+    ctx.effect(() => ctx.provide('fs', remoteFsProvider), 'remote-host: remote fs provider');
+  }
+
   const tunnels = new Map();
 
   async function resolveProfile(idOrName) {
@@ -594,7 +620,13 @@ export function apply(ctx) {
 
       if (action === 'workspace') {
         const binding = sessionId === '' ? await bindings.getDefault() : await bindings.resolveForSession(sessionId);
-        return { sessionId: sessionId === '' ? null : sessionId, binding };
+        // 模型在本会话看到的远程工作区提示（null 表示没有注入）
+        const prompt = sessionId === '' ? null : await workspacePromptText(sessionId);
+        return {
+          sessionId: sessionId === '' ? null : sessionId,
+          binding,
+          prompt: prompt === null ? null : prompt.text
+        };
       }
       if (action === 'bind') {
         if (sessionId === '') throw new Error('绑定远程工作区需要在对话中调用（缺少会话标识）');
@@ -842,6 +874,65 @@ export function apply(ctx) {
     pool.disposeAll();
   }, 'remote-host: ssh session pool + tunnels');
 
+  /** 某个会话会看到的「远程工作区」提示文本（无工作区时返回 null）。 */
+  const workspacePromptText = async (agentId) => {
+    const sessionBinding = await bindings.getSession(String(agentId)).catch(() => null);
+    const binding = sessionBinding ?? await bindings.getDefault().catch(() => null);
+    if (binding === null) return null;
+    const scopeLabel = sessionBinding !== null ? '本对话已绑定远程工作区' : '本机默认远程工作区';
+    return {
+      binding,
+      sessionScoped: sessionBinding !== null,
+      text: [
+        `${scopeLabel}：${binding.connectionName}:${binding.path}`,
+        '该目录位于远程主机，不在本机：',
+        '- 浏览、读取、写入、搜索该目录请用 remote_fs 工具；省略 connection/path 即使用此工作区。',
+        '- 远程执行命令用 remote_fs action=exec；本地 bash 与 read/write/glob/grep 只作用于本机。'
+      ].join('\n')
+    };
+  };
+
+  // 把「本对话绑定的远程工作区」注入每轮系统提示。
+  // 没有这一步，模型只会看到本机 cwd，不会去用 remote_fs——表现为「绑定了但对话用不上」。
+  const systemPrompt = typeof ctx.get === 'function' ? ctx.get('systemPrompt') : undefined;
+  if (systemPrompt !== undefined && typeof systemPrompt.context === 'function') {
+    let contextOrder = 100;
+    try {
+      contextOrder = systemPrompt.getContextOrder('WORKING_DIRECTORY') + 1;
+    } catch {
+      /* 排序名变化时退回默认值 */
+    }
+
+    ctx.effect(() => systemPrompt.context({
+      name: 'remote-host:workspace',
+      order: contextOrder,
+      required: false,
+      interpolate: false,
+      // 真实文本由 assemble 事件按会话写入；这里的占位永不参与渲染
+      text: () => ''
+    }), 'remote-host: prompt context slot');
+
+    ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+      const result = await next();
+      const agentId = context?.agent?.id;
+      if (agentId === undefined) return result;
+
+      const resolved = await workspacePromptText(agentId);
+      if (resolved === null) return result;
+      const { text } = resolved;
+
+      const contexts = result.contexts ?? (result.contexts = []);
+      const entry = contexts.find((item) => item.name === 'remote-host:workspace');
+      if (entry === undefined) {
+        contexts.unshift({ name: 'remote-host:workspace', text, interpolate: false });
+      } else {
+        entry.text = text;
+        entry.interpolate = false;
+      }
+      return result;
+    }, { prepend: true });
+  }
+
   // 重新打开对话（启动/恢复）时，先重连它绑定的远程工作区，
   // 赶在第一次工具调用之前。此处失败保持静默：
   // 只有在真正使用该连接时才会暴露真实错误。
@@ -854,6 +945,14 @@ export function apply(ctx) {
       const profile = await store.get(binding.connectionId);
       if (profile === undefined) return;
       void pool.ensure(profile).catch(() => {});
+
+      // 远程执行世界已开启：把本会话的工作目录切到真实远程路径
+      if (remoteFsProvider !== null) {
+        const workingDirectory = typeof ctx.get === 'function' ? ctx.get('workingDirectory') : undefined;
+        if (workingDirectory !== undefined && typeof workingDirectory.set === 'function') {
+          await workingDirectory.set(agent, binding.path);
+        }
+      }
     } catch {
       /* auto-connect must never break session creation */
     }

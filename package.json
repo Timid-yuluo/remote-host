@@ -22,7 +22,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "lib/fs-remote.js"
   ],
   "dependencies": {
     "ssh2": "^1.17.0"
@@ -42,17 +43,9 @@
     "node": ">=20",
     "dsh": ">=0.2.1-0"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Timid-yuluo/remote-host.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Timid-yuluo/remote-host/issues"
-  },
-  "homepage": "https://github.com/Timid-yuluo/remote-host#readme",
   "scripts": {
     "lint": "node tests/lint.mjs",
-    "test": "node tests/store.test.mjs && node tests/store.fix.test.mjs && node tests/vault.test.mjs && node tests/exec.test.mjs && node tests/workspace.test.mjs && node tests/extras.test.mjs && node tests/rpc.e2e.test.mjs && node tests/client.smoke.mjs",
+    "test": "node tests/store.test.mjs && node tests/store.fix.test.mjs && node tests/vault.test.mjs && node tests/exec.test.mjs && node tests/workspace.test.mjs && node tests/extras.test.mjs && node tests/rpc.e2e.test.mjs && node tests/client.smoke.mjs && node tests/fs-remote-wire.test.mjs && node tests/fs-remote.test.mjs",
     "test:e2e": "node tests/ssh.e2e.mjs"
   }
 }

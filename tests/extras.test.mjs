@@ -5,7 +5,7 @@ import path from 'node:path';
 const profileDir = await mkdtemp(path.join(tmpdir(), 'rh-extra-'));
 process.env.DSH_PROFILE_DIR = profileDir;
 
-const { apply } = await import('../remote-host-plugin/entry.js');
+const { apply } = await import('../entry.js');
 
 const registered = { routes: [], tools: [] };
 const ctx = {

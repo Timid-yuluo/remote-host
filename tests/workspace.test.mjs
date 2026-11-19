@@ -10,11 +10,17 @@ const { apply } = await import('../entry.js');
 
 const registered = { routes: [], tools: [] };
 const handlers = { 'agent/created': [] };
+const promptContexts = [];
+const systemPromptStub = {
+  context: (entry) => { promptContexts.push(entry); return () => {}; },
+  getContextOrder: () => 50
+};
 const ctx = {
   get connection() { return { requestRejection: () => undefined }; },
   get webServer() { return { register: (route) => { registered.routes.push(route); return () => {}; } }; },
   get tools() { return { register: (definition) => { registered.tools.push(definition); return () => {}; } }; },
   effect: (fn) => { const dispose = fn(); return dispose; },
+  get(name) { return name === 'systemPrompt' ? systemPromptStub : undefined; },
   on: (name, listener) => { (handlers[name] ??= []).push(listener); return () => {}; }
 };
 await apply(ctx);
@@ -77,9 +83,9 @@ if (fallback.binding?.path !== '/var/www') throw new Error(`fallback to default 
 console.log('5. unbind → falls back to default workspace OK');
 
 // 6. agent/created prewarms the bound connection (fire-and-forget, must not throw)
-const listeners = handlers['agent/created'];
-if (listeners.length !== 1) throw new Error(`expected one agent/created listener, got ${listeners.length}`);
-await listeners[0]({ agent: { id: 'sess-1' }, source: 'resume' });
+const resumeHooks = handlers['agent/created'] ?? [];
+if (resumeHooks.length !== 1) throw new Error(`expected one agent/created listener, got ${resumeHooks.length}`);
+await resumeHooks[0]({ agent: { id: 'sess-1' }, source: 'resume' });
 console.log('6. agent/created resume hook ran without throwing OK');
 
 // 7. bindings persisted on disk
@@ -101,6 +107,37 @@ if (listing.ok) {
   if (saved !== undefined && saved.lastPath === undefined) throw new Error('lastPath not exposed');
   console.log('9. fs.list remembered directory OK');
 }
+
+// 9. 绑定的远程工作区必须出现在每轮系统提示里（否则模型不会去用 remote_fs）
+await tool.execute({ action: 'bind', connection: 'ws-box', path: '/etc' }, { agent: { id: 'sess-1' } });
+const assemble = (handlers['system-prompt/assemble'] ?? [])[0];
+if (assemble === undefined) throw new Error('system-prompt/assemble listener not registered');
+if (promptContexts.length === 0) throw new Error('prompt context slot not registered');
+const assembly = { sections: [], contexts: [], tools: [], variables: {} };
+const out = await assemble(assembly, { agent: { id: 'sess-1' } }, async () => assembly);
+const injected = (out.contexts ?? []).find((entry) => entry.name === 'remote-host:workspace');
+if (injected === undefined) throw new Error('bound workspace not injected into the prompt');
+if (!injected.text.includes('ws-box')) throw new Error(`prompt text missing connection: ${injected.text}`);
+if (!injected.text.includes('/etc')) throw new Error('prompt text missing path');
+console.log('9. bound workspace injected into system prompt OK');
+
+// 10. 没有会话绑定时退回默认工作区（默认工作区也要对模型可见）
+await rpc('workspace.setDefault', { connection: 'ws-box', path: '/var/www' });
+const defaultAssembly = { sections: [], contexts: [], tools: [], variables: {} };
+const withDefault = await assemble(defaultAssembly, { agent: { id: 'sess-unbound' } }, async () => defaultAssembly);
+const fallbackEntry = (withDefault.contexts ?? []).find((entry) => entry.name === 'remote-host:workspace');
+if (fallbackEntry === undefined) throw new Error('default workspace not injected');
+if (!fallbackEntry.text.includes('/var/www')) throw new Error(`default path missing: ${fallbackEntry.text}`);
+if (!fallbackEntry.text.includes('默认')) throw new Error('default workspace should be labelled as such');
+console.log('10. default workspace injected for unbound sessions OK');
+
+// 11. 完全没有工作区时不注入（避免噪音）
+await rpc('workspace.clearDefault', {});
+const bareAssembly = { sections: [], contexts: [], tools: [], variables: {} };
+const bare = await assemble(bareAssembly, { agent: { id: 'sess-unbound' } }, async () => bareAssembly);
+const bareEntry = (bare.contexts ?? []).find((entry) => entry.name === 'remote-host:workspace');
+if (bareEntry !== undefined && bareEntry.text !== '') throw new Error('no workspace should mean no injection');
+console.log('11. no workspace → no prompt noise OK');
 
 await rm(profileDir, { recursive: true, force: true });
 console.log('WORKSPACE BINDING TESTS PASS');

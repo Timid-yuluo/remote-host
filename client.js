@@ -463,6 +463,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false);
       const [error, setError] = useState(null);
       const [pickerOpen, setPickerOpen] = useState(false);
+      const [warning, setWarning] = useState(null);
 
       const load = useCallback(async () => {
         try {
@@ -485,16 +486,35 @@ window.__ModuleLoader__.load({
         if (draft.connection === '') { setError(t('noConnections')); return; }
         setBusy(true);
         setError(null);
+        setWarning(null);
+
+        // 绑定本身必须先落库：连不上主机不应该让绑定失效
         try {
-          await call('binding.set', { sessionId, connection: draft.connection, path: draft.path === '' ? '/' : draft.path });
-          await call('session.connect', { id: draft.connection });
-          setBinding((await call('binding.get', { sessionId })).binding);
-          setOpen(false);
+          await call('binding.set', {
+            sessionId,
+            connection: draft.connection,
+            path: draft.path === '' ? '/' : draft.path
+          });
         } catch (e) {
           setError(friendlyError(e));
-        } finally {
           setBusy(false);
+          return;
         }
+
+        // 连接是尽力而为：失败只提示，不回滚绑定
+        try {
+          await call('session.connect', { id: draft.connection });
+        } catch (e) {
+          setWarning(`${t('boundButConnectFailed')}：${friendlyError(e)}`);
+        }
+
+        try {
+          setBinding((await call('binding.get', { sessionId })).binding);
+        } catch {
+          /* 读取绑定失败不影响已写入的结果 */
+        }
+        setOpen(false);
+        setBusy(false);
       };
 
       const unbind = async () => {
@@ -527,6 +547,11 @@ window.__ModuleLoader__.load({
             if (list.length > 0) setDraft((prev) => ({ ...prev, connection: prev.connection === '' ? list[0].id : prev.connection }));
           }
         }, label),
+        warning !== null
+          ? h('div', {
+              style: { fontSize: 11, color: 'var(--dsw-alias-state-warn-primary)', maxWidth: 320, lineHeight: 1.4 }
+            }, `⚠ ${warning}`)
+          : null,
         open ? h(Modal, { title: t('pickRemote'), onClose: () => setOpen(false) },
             connections.length === 0
               ? h('div', { className: 'rh-note' }, t('noConnections'))
@@ -537,6 +562,13 @@ window.__ModuleLoader__.load({
                       value: draft.connection,
                       onChange: (e) => setDraft((prev) => ({ ...prev, connection: e.target.value }))
                     }, connections.map((entry) => h('option', { key: entry.id, value: entry.id }, `${entry.name} · ${entry.username}@${entry.host}`)))),
+                  (() => {
+                    const picked = connections.find((entry) => entry.id === draft.connection);
+                    return picked !== undefined && picked.hasSecret !== true
+                      ? h('div', { className: 'rh-note', style: { color: 'var(--dsw-alias-state-warn-primary)' } },
+                          `${t('noSecretHint')}`)
+                      : null;
+                  })(),
                   h('div', { className: 'rh-field', key: 'path' },
                     h('label', null, t('pathPlaceholder')),
                     h('div', { className: 'rh-inline', style: { gap: 6 } },

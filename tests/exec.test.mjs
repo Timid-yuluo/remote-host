@@ -1,20 +1,15 @@
 import { createRequire } from 'node:module';
-const requireFromBundle = createRequire(new URL('../package.json', import.meta.url));
+const requireFromBundle = createRequire('/Users/a1234/Desktop/项目源码/remote-host-plugin/package.json');
 const ssh2 = requireFromBundle('ssh2');
 const { Server } = ssh2;
 const { OPEN_MODE, STATUS_CODE } = await import('node:module').then(() => requireFromBundle('ssh2/lib/protocol/SFTP.js'));
 
 const { SshPool } = await import('../lib/ssh.js');
 
-import { readFileSync } from 'node:fs';
-import { mkdtemp } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-// 每次运行生成一次性主机密钥：避免 /tmp 残留导致签名不匹配
-const keyDir = await mkdtemp(path.join(tmpdir(), 'rh-exec-'));
-const keyPath = path.join(keyDir, 'hostkey');
-execFileSync('ssh-keygen', ['-t', 'ed25519', '-N', '', '-f', keyPath, '-q']);
+const keyPath = '/tmp/rh-exec-hostkey';
+if (!existsSync(keyPath)) execFileSync('ssh-keygen', ['-t', 'ed25519', '-N', '', '-f', keyPath, '-q']);
 const hostKey = readFileSync(keyPath);
 
 const seen = [];

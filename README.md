@@ -48,28 +48,18 @@
 
 ## 二、安装与启用
 
-### 从源码安装（本机开发）
-
-```bash
-git clone https://github.com/Timid-yuluo/remote-host.git
-cd dsh-remote-host
-npm install          # 只装 ssh2 一个运行时依赖
-```
-
-在 DeepSeek Harness 中：
+插件以 DSH bundle 形式安装（本地目录即可）：
 
 ```
-# 首次：插件管理器 → 安装 bundle → 选择本目录
-# 之后改代码：插件管理器里「关闭 → 开启」即可重载
+# 已安装：在插件管理器里「关闭 → 开启」即可重载最新代码
+# 首次安装：plugin_manager install_bundle(target = 本项目路径)
 ```
 
 安装后 **刷新页面（Cmd+Shift+R）**，侧栏出现服务器图标。
 
-### 目录约定
-
-仓库根目录**就是**插件包（`package.json` 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`），测试放在 `tests/`。
-
 > 客户端分两部分：`client.js`（行为）与 `client.parts.js`（样式 + 文案分包）。分包加载失败会降级为无样式继续运行，不会白屏。
+
+---
 
 ## 三、使用说明
 
@@ -157,8 +147,7 @@ binding.set | get | clear
 ## 七、代码结构
 
 ```
-dsh-remote-host/
-├─ package.json        bundle 声明、依赖与脚本
+remote-host-plugin/
 ├─ entry.js            Host 薄入口（动态 import app.js，改代码免重启）
 ├─ app.js              Host 实现：RPC 路由、工具、审计、隧道、凭据库对外接口
 ├─ client.js           面板（slot 注册 + 组件 + 交互）
@@ -170,10 +159,7 @@ dsh-remote-host/
 │  └─ audit.js         审计日志（JSONL、轮转）
 ├─ cordis.patch.yml    bundle 装配行
 ├─ locale/             zh.json / en.json（面板标题）
-├─ tests/              11 个测试与一致性检查
-├─ icon.svg
-├─ LICENSE
-└─ .gitignore
+└─ icon.svg
 ```
 
 实现要点：
@@ -187,28 +173,80 @@ dsh-remote-host/
 ## 八、测试
 
 ```bash
-npm run lint               # 一致性检查（语法 / 端点对齐 / 文案覆盖 / 分包契约）
-npm test                   # 8 个单元与集成测试
-npm run test:e2e           # 起本地 ssh2 Server 的真机端到端
-```
-
-单个测试也可以直接跑：
-
-```bash
-node tests/store.test.mjs  # 存储与加密
-node tests/store.fix.test.mjs    # 空口令编辑保留密钥、lastPath
-node tests/vault.test.mjs        # 主口令：迁移 / 锁定 / 错误口令 / 关闭还原
-node tests/ssh.test.mjs          # SSH 模块单元
-node tests/ssh.e2e.mjs           # 真机 e2e：连通 / 读写 / 权限 / 递归删 / 指纹 / 密钥认证 / 重连
-node tests/rpc.e2e.test.mjs      # RPC 端到端（证明密码确实解密到 SSH 层）
-node tests/exec.test.mjs         # exec 超时与输出上限、grep 引号转义
-node tests/workspace.test.mjs    # 默认工作区与会话绑定
-node tests/extras.test.mjs       # 分组 / 审计 / 导入导出 / 隧道
-node tests/client.smoke.mjs      # 客户端渲染冒烟（桩替换模块系统与 React，驱动事件）
-node tests/lint.mjs              # 一致性：语法、端点对齐、文案覆盖、分包契约
+cd remote-host-tests
+node store.test.mjs        # 存储与加密
+node store.fix.test.mjs    # 空口令编辑保留密钥、lastPath
+node vault.test.mjs        # 主口令：迁移 / 锁定 / 错误口令 / 关闭还原
+node ssh.test.mjs          # SSH 模块单元
+node ssh.e2e.mjs           # 真机 e2e：连通 / 读写 / 权限 / 递归删 / 指纹 / 密钥认证 / 重连
+node rpc.e2e.test.mjs      # RPC 端到端（证明密码确实解密到 SSH 层）
+node exec.test.mjs         # exec 超时与输出上限、grep 引号转义
+node workspace.test.mjs    # 默认工作区与会话绑定
+node extras.test.mjs       # 分组 / 审计 / 导入导出 / 隧道
+node client.smoke.mjs      # 客户端渲染冒烟（桩替换模块系统与 React，驱动事件）
+node lint.mjs              # 一致性：语法、端点对齐、文案覆盖、分包契约
 ```
 
 `lint.mjs` 会拦住三类真实事故：客户端调用了 Host 没有的端点、文案键缺失（界面会显示英文键名）、分包契约不符。
+
+---
+
+## 十一、远程执行世界（真·远程工作目录）
+
+默认情况下会话的工作目录是本机路径，插件通过 `remote_fs` 工具操作远程（工具代理模式）。
+如果希望**工作目录本身就是远程路径**——`bash`、`read`、`write`、`edit`、`glob`、`grep` 全在远程执行——可以启用远程 fs 后端。
+
+### 原理
+
+DSH 的 `ctx.fs` 是一个可替换的后端契约，明确支持「remote execution world」：
+
+```
+Abstract filesystem provider. Targets must preserve identity across aliases;
+resolve()  — a remote/sandboxed backend may need a round-trip to map a path to a stable identity
+processPath(target) — the canonical absolute path a subprocess in this
+                      filesystem's execution world can open
+```
+
+`lib/fs-remote.js` 用 SFTP 实现了这套契约（14 个方法），启用后：
+
+- `workingDirectory.set('/www/wwwroot/site')` 通过校验（`fs.stat` 走远程，路径真实存在）
+- 提示里的 cwd、`bash` 的 cwd、文件工具的目标全部是远程路径
+- 本地工具不再触碰本机文件
+
+### 启用步骤
+
+1. **停掉本地 fs 后端**（同名服务不能并存）。在 profile 的 `cordis.patch.yml` 加：
+
+```yaml
+- id: fs-sandbox
+  disabled: true
+```
+
+2. **给插件传配置**（同一个文件里的 insert 行）：
+
+```yaml
+- insert:
+    - id: remote-host
+      name: "@local/remote-host"
+      config:
+        remoteFs:
+          enabled: true
+          connection: 腾讯云渡鸦    # 可选；省略时用默认工作区的连接
+```
+
+3. 重启 DSH（或重载插件）。
+
+### 回滚
+
+删掉上面两段配置即可——`fs-sandbox` 会重新接管，插件回到「工具代理模式」，绑定的远程目录依然可用 `remote_fs` 访问。
+
+> 注意：这一步替换的是**整个进程**的文件系统后端。若远程不可达，依赖 `ctx.fs` 的工具会失败。生产使用前请确认连接凭据可用（面板里先测一次连接）。
+
+### 已知限制
+
+- 不支持目录监听（`watch` 显式拒绝，与契约基类的行为一致）
+- 原子写依赖服务器的 `posix-rename@openssh.com` 扩展；不支持时退回「先删后改名」
+- SFTP 不提供 inode，`FsVersion` 由 `mtime:size:mode` 推导，极端并发下弱于本地后端
 
 ---
 
@@ -232,22 +270,3 @@ node tests/lint.mjs              # 一致性：语法、端点对齐、文案覆
 | 9–10 | 远程目录选择器、拖拽移动、分页、路径补全、Git 面板、行号与语法高亮 |
 | 11–12 | 代码重构：单飞建连、断线重连、Modal 复用、分包拆分、客户端冒烟测试、lint |
 | 13–14 | 主机指纹（TOFU）、密钥认证验证、跳板机、凭据库主口令、分块上传、命令历史、多缓冲编辑、错误上下文 |
----
-
-## 贡献
-
-欢迎提交 issue 与 PR。改动前请先跑：
-
-```bash
-npm run lint && npm test
-```
-
-`tests/lint.mjs` 会检查「客户端调用的 RPC 端点必须存在于 Host」「文案键在 zh/en 都存在」「分包命名与模块 id」三类约定，提交前务必通过。
-
-## 许可
-
-[MIT](LICENSE)
-
-## 安全说明
-
-本插件会把 SSH 凭据加密保存在本机（`~/.dsh/remote-host-store/`）。请勿把该目录、`.secret.key` 或 `vault.json` 提交到任何仓库——`.gitignore` 已覆盖，但请自行确认。
